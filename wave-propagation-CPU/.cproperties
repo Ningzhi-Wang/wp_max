@@ -1,0 +1,6 @@
+#This file is only needed by maxide
+LIBS=
+LIBPATH=
+MACROS=
+INCPATH=
+SRCPATH=src

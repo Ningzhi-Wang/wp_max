@@ -1,0 +1,65 @@
+/**
+ * Document: MaxCompiler Tutorial (maxcompiler-tutorial)
+ * Chapter: 3      Example: 1      Name: Moving Average Simple
+ * MaxFile name: MovingAverageSimple
+ * Summary:
+ * 	Computes a three point moving average over the input stream
+ */
+
+package wavepropagation;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Counter;
+
+class WavePropagationKernel extends Kernel {
+
+	WavePropagationKernel(KernelParameters parameters, int nxMax) {
+		super(parameters);
+		DFEVar dtdx2 = io.scalarInput("dtdx2", dfeFloat(8, 24));
+		OffsetExpr nx = stream.makeOffsetParam("nx", 3, 300000);
+		DFEVar nx_value = nx.getDFEVar(this);
+
+		Count.Params position_params = control.count.makeParams(19)
+			.withMax(nx_value).withInc(1);
+		Counter position = control.count.makeCounter(position_params);
+		DFEVar cell = control.count.simpleCounter(19);
+
+		DFEVar v = io.input("velocity", dfeFloat(8, 24));
+		DFEVar q = io.input("absorb", dfeFloat(8, 24));
+		DFEVar p = io.input("prev", dfeFloat(8, 24));
+		DFEVar d = io.input("density", dfeFloat(8, 24));
+		DFEVar c = io.input("curr", dfeFloat(8, 24));
+		DFEVar current_c = stream.offset(c, 3*nx);
+		DFEVar current_d = stream.offset(d, 3*nx);
+
+		DFEVar d2z = 1.0 / 90.0 * (c * d + 
+			    stream.offset(c, 6*nx) * stream.offset(d, 6*nx)) -
+			3.0 / 20.0 * (stream.offset(c, nx) * stream.offset(d, nx) + 
+				stream.offset(c, 5*nx) * stream.offset(d, 5*nx)) +
+			3.0 / 2.0 * (stream.offset(c, 2*nx) * stream.offset(d, 2*nx) + 
+				stream.offset(c, 4*nx) * stream.offset(d, 4*nx)) -
+			49.0 / 18.0 * (current_c * current_d);
+
+		 DFEVar d2x = 
+		    1.0 / 90.0 * (stream.offset(c, 3*nx-3) * stream.offset(d, 3*nx-3) + 
+			    stream.offset(c, 3*nx+3) * stream.offset(d, 3*nx+3)) -
+			3.0 / 20.0 * (stream.offset(c, 3*nx-2) * stream.offset(d, 3*nx-2) + 
+				stream.offset(c, 3*nx+2) * stream.offset(d, 3*nx+2)) +
+			3.0 / 2.0 * (stream.offset(c, 3*nx-1) * stream.offset(d, 3*nx-1) + 
+				stream.offset(c, 3*nx+1) * stream.offset(d, 3*nx+1)) -
+			49.0 / 18.0 * (current_c * current_d);
+
+		DFEVar result = ((d2x+d2z)*dtdx2*v*v/current_d + 
+			(2.0-q*q)*current_c - (1.0-q)*p) / (1.0+q);
+
+		DFEVar r = position.getCount()>2 & position.getCount()<nx_value-3 ? result : 0;
+
+		//debug.simPrintf(cell.eq(79*nx_value), "source value: %f\n", result);
+
+		io.output("nxt", r, dfeFloat(8, 24));
+    }
+}

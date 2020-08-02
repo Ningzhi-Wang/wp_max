@@ -1,0 +1,3 @@
+manager=wavepropagation.WavePropagationManagerMAX5C
+parameters=DFEModel\=MAIA maxFileName\=WavePropagation target\=DFE
+jvmargs=-Xmx2G

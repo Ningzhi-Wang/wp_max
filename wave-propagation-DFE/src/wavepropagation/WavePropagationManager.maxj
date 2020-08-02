@@ -1,0 +1,61 @@
+/**
+ * Document: MaxCompiler Tutorial (maxcompiler-tutorial)
+ * Chapter: 3      Example: 1      Name: Moving Average Simple
+ * MaxFile name: MovingAverageSimple
+ * Summary:
+ * 	Manager interface for the three point moving average kernel design.
+ *  All IO is between the CPU and the DFE.
+ */
+
+package wavepropagation;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerSlic;
+
+public interface WavePropagationManager extends ManagerPCIe, ManagerKernel, ManagerSlic {
+	static final int nxMax = 65535*65535-1;
+
+	default void setup() {
+		Kernel kernel = new WavePropagationKernel(
+			makeKernelParameters("WavePropagationKernel"), nxMax);
+		KernelBlock kernelBlock = addKernel(kernel);
+
+		kernelBlock.getInput("velocity") <== addStreamFromCPU("velocity");
+		kernelBlock.getInput("absorb") <== addStreamFromCPU("absorb");
+		kernelBlock.getInput("prev") <== addStreamFromCPU("prev");
+		kernelBlock.getInput("density") <== addStreamFromCPU("density");
+		kernelBlock.getInput("curr") <== addStreamFromCPU("curr");
+		addStreamToCPU("nxt") <== kernelBlock.getOutput("nxt");
+		createSlicInterface(interfaceDefault());
+	}
+
+	static EngineInterface interfaceDefault() {
+		EngineInterface ei = new EngineInterface();
+		InterfaceParam dtdx2 = ei.addParam("dtdx2", CPUTypes.FLOAT);
+		InterfaceParam nx = ei.addParam("nx", CPUTypes.INT32);
+		InterfaceParam nz = ei.addParam("nz", CPUTypes.INT32);
+
+		ei.setTicks("WavePropagationKernel", ((nx * (nz - 8))/4 + 1) * 4);
+
+		ei.setScalar("WavePropagationKernel", "dtdx2", dtdx2);
+		ei.setOffset("WavePropagationKernel", "nx", nx);
+		InterfaceParam buffer_size = ((nx * (nz - 8))/4 + 1) * 4 * CPUTypes.FLOAT.sizeInBytes();
+
+		ei.setStream("velocity", CPUTypes.FLOAT, buffer_size);
+		ei.setStream("absorb", CPUTypes.FLOAT, buffer_size);
+		ei.setStream("prev", CPUTypes.FLOAT, buffer_size);
+		ei.setStream("nxt", CPUTypes.FLOAT, buffer_size);
+
+		InterfaceParam large_size = ((nx * (nz - 2))/4 + 1) * 4 * CPUTypes.FLOAT.sizeInBytes();
+		ei.setStream("curr", CPUTypes.FLOAT, large_size);
+		ei.setStream("density", CPUTypes.FLOAT, large_size);
+		return ei;
+	}
+
+}

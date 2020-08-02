@@ -1,0 +1,16 @@
+Wed Jul 29 13:43:44 UTC 2020
+Manager_WavePropagation
+orig
+Manager_WavePropagation_orig.dot
+pipelining
+Manager_WavePropagation_pipelining.dot
+schedstall
+Manager_WavePropagation_schedstall.dot
+clockwidth
+Manager_WavePropagation_clockwidth.dot
+dualaspect
+Manager_WavePropagation_dualaspect.dot
+pullpush
+Manager_WavePropagation_pullpush.dot
+final
+Manager_WavePropagation_final.dot

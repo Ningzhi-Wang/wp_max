@@ -1,0 +1,26 @@
+/**
+ * Document: MaxCompiler Tutorial (maxcompiler-tutorial)
+ * Chapter: 3      Example: 1      Name: Moving Average Simple
+ * MaxFile name: MovingAverageSimple
+ * Summary:
+ * 	Manager for the three point moving average kernel design.
+ *  All IO is between the CPU and the DFE.
+ */
+
+package wavepropagation;
+
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.platform.max5.manager.MAX5CManager;
+
+public class WavePropagationManagerMAX5C extends MAX5CManager implements WavePropagationManager {
+
+	public WavePropagationManagerMAX5C(EngineParameters params) {
+		super(params);
+		setup();
+	}
+
+	public static void main(String[] args) {
+		MAX5CManager manager = new WavePropagationManagerMAX5C(new EngineParameters(args));
+		manager.build();
+	}
+}
