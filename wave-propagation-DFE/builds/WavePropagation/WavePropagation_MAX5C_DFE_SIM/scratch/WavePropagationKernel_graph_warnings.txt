@@ -1,9 +1,0 @@
-*** After kernel graph-pass 'Init Graph' ***
-node "Counter(NUMERIC_INCREMENTING)\nInc: 1\nReset: 0\nInit: 0" (ID 6) has unconnected outputs: [count]
-stack trace of node origin follows:
-	com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.simpleCounter(Count.java:524)
-	wavepropagation.WavePropagationKernel.<init>(WavePropagationKernel.maxj:29)
-	wavepropagation.WavePropagationManager.setup(WavePropagationManager.maxj:25)
-	wavepropagation.WavePropagationManagerMAX5C.<init>(WavePropagationManagerMAX5C.maxj:19)
-	wavepropagation.WavePropagationManagerMAX5C.main(WavePropagationManagerMAX5C.maxj:23)
-	

@@ -10,6 +10,7 @@ package wavepropagation;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
@@ -20,13 +21,21 @@ class WavePropagationKernel extends Kernel {
 	WavePropagationKernel(KernelParameters parameters, int nxMax) {
 		super(parameters);
 		DFEVar dtdx2 = io.scalarInput("dtdx2", dfeFloat(8, 24));
-		OffsetExpr nx = stream.makeOffsetParam("nx", 3, 300000);
-		DFEVar nx_value = nx.getDFEVar(this);
+		OffsetExpr nx = stream.makeOffsetParam("nx", 3, nxMax);
+		DFEVar nz = io.scalarInput("nz", dfeUInt(16));
+		DFEVar nx_value = nx.getDFEVar(this).cast(dfeUInt(16));
 
-		Count.Params position_params = control.count.makeParams(19)
+
+		Count.Params position_params = control.count.makeParams(16)
 			.withMax(nx_value).withInc(1);
 		Counter position = control.count.makeCounter(position_params);
-		DFEVar cell = control.count.simpleCounter(19);
+
+		Count.Params line_params = control.count.makeParams(16)
+		    .withEnable(position.getWrap()).withInc(1);
+		Counter line = control.count.makeCounter(line_params);
+
+		DFEVar line_number = line.getCount();
+
 
 		DFEVar v = io.input("velocity", dfeFloat(8, 24));
 		DFEVar q = io.input("absorb", dfeFloat(8, 24));
@@ -36,9 +45,21 @@ class WavePropagationKernel extends Kernel {
 		DFEVar current_c = stream.offset(c, 3*nx);
 		DFEVar current_d = stream.offset(d, 3*nx);
 
-		DFEVar d2z = 1.0 / 90.0 * (c * d + 
+		DFEVar selector = KernelMath.min(line_number, constant.var(dfeUInt(16), 2)).cast(dfeUInt(2));
+
+		DFEVar c_offset_1 = control.mux(selector, 
+		    stream.offset(c, 4*nx), stream.offset(c, 2*nx), c);
+		DFEVar d_offset_1 = control.mux(selector, 
+		    stream.offset(d, 4*nx), stream.offset(d, 2*nx), d);
+
+		DFEVar c_offset_2 = control.mux(line_number > 0, stream.offset(c, 3*nx), stream.offset(c, nx));
+		DFEVar d_offset_2 = control.mux(line_number > 0, stream.offset(d, 3*nx), stream.offset(d, nx));
+
+
+		DFEVar d2z = 
+		    1.0 / 90.0 * (c_offset_1 * d_offset_1 + 
 			    stream.offset(c, 6*nx) * stream.offset(d, 6*nx)) -
-			3.0 / 20.0 * (stream.offset(c, nx) * stream.offset(d, nx) + 
+			3.0 / 20.0 * (c_offset_2 * d_offset_2 + 
 				stream.offset(c, 5*nx) * stream.offset(d, 5*nx)) +
 			3.0 / 2.0 * (stream.offset(c, 2*nx) * stream.offset(d, 2*nx) + 
 				stream.offset(c, 4*nx) * stream.offset(d, 4*nx)) -
@@ -56,9 +77,10 @@ class WavePropagationKernel extends Kernel {
 		DFEVar result = ((d2x+d2z)*dtdx2*v*v/current_d + 
 			(2.0-q*q)*current_c - (1.0-q)*p) / (1.0+q);
 
-		DFEVar r = position.getCount()>2 & position.getCount()<nx_value-3 ? result : 0;
+		DFEVar r = position.getCount()>2 & 
+		    position.getCount()<nx_value-3 & line.getCount() < nz - 6 
+		    ? result : 0;
 
-		//debug.simPrintf(cell.eq(79*nx_value), "source value: %f\n", result);
 
 		io.output("nxt", r, dfeFloat(8, 24));
     }

@@ -1,9 +1,0 @@
-CXXFLAGS_OPTIONAL := -DHAVE_KERNELS -DMAXFILE_INC="../../MaxCompilerDesignData.dat" -g0  -DSLIC_NO_DECLARATIONS 
-CFLAGS_OPTIONAL   := -DMAXFILE_INC="../../MaxCompilerDesignData.dat" -g0  -DSLIC_NO_DECLARATIONS 
-LDFLAGS_OPTIONAL  := -O2 -s
-TARGET_BIN := WavePropagation.so
-MODE := SHARED_OBJECT
-OBJS :=  \
-	$(OBJDIR)/WavePropagationKernel_exec0.O2.o \
-	$(OBJDIR)/WavePropagationKernel.O0.o \
-	$(OBJDIR)/WavePropagationKernel_Templates.O2.o

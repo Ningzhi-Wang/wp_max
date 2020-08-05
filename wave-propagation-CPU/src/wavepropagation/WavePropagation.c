@@ -65,52 +65,16 @@ void get_ricker(int total_steps, float dt, float freq, float amplitude, float* s
     float ts = ns * dt;
     float a2 = pow(freq * M_PI, 2);
     float t0 = ts/2 - dt/2;
-    float max_source = 0;
     for (int i = 0; i < total_steps; ++i) {
         if (i < ns) {
             float at2 = a2*pow(i*dt-t0, 2);
             src[i] = amplitude * (1-2*at2) * exp(-at2);
-            if (src[i] > max_source) {
-                max_source = src[i];
-            }
         }else {
             src[i] = 0.0;
         }
     }
 }
 
-void update_boundary(int nx, float dtdx2, float* velocity, float* absorb, 
-    float* den, float* prev, float* curr, float* next)
-{
-    for (int cell = 2*nx; cell < 4*nx; ++cell) {
-        int offset_1 = cell / nx == 2 ? cell+nx : cell-nx; 
-        int offset_2 = cell / nx == 2 ? cell : cell-2*nx; 
-		float d2z = 1.0 / 90.0 * (curr[offset_1] * den[offset_1] + 
-			    curr[cell+3*nx] * den[cell+3*nx]) -
-			3.0 / 20.0 * (curr[cell+offset_2] * den[cell+offset_2] + 
-				curr[cell+2*nx] * den[cell+2*nx]) +
-			3.0 / 2.0 * (curr[cell-nx] * den[cell-nx] + 
-				curr[cell+nx] * den[cell+nx]) -
-			49.0 / 18.0 * (curr[cell] * den[cell]);
-
-		float d2x = 1.0 / 90.0 * (curr[cell-3] * den[cell-3] + 
-			    curr[cell+3] * den[cell+3]) -
-			3.0 / 20.0 * (curr[cell-2] * den[cell-2] + 
-				curr[cell+2] * den[cell+2]) +
-			3.0 / 2.0 * (curr[cell-1] * den[cell-1] + 
-				curr[cell+1] * den[cell+1]) -
-			49.0 / 18.0 * (curr[cell] * den[cell]);
-        
-        float q = absorb[cell];
-        
-     	float result = ((d2x+d2z)*dtdx2*velocity[cell]*velocity[cell]/den[cell]+ 
-			(2.0-q*q)*curr[cell]- (1.0-q)*prev[cell]) / (1.0+q);
-
-		result = cell%nx>2 && cell%nx<nx-3 ? result : 0;
-        next[cell] = result;
-    }
-
-}
 
 int main()
 {
@@ -131,11 +95,13 @@ int main()
     float dt = courant_number * dx / 3500.0;
     int time_steps = floor(total_time / dt);
 
+    int cell_numbers = nx*(nz-6) - 1 + (6*nx/4+1)*4;
+
 	int buffer_size = (nx * nz * sizeof(float) / 4 + 1) * 4;
 
-    float* vel = malloc(buffer_size); 
-    float* den = malloc(buffer_size);
-    float* absorb = malloc(buffer_size);
+    float* vel = calloc(cell_numbers, sizeof(float)); 
+    float* den = calloc(cell_numbers, sizeof(float));
+    float* absorb = calloc(cell_numbers, sizeof(float));
 	printf("init problem\n");
 
 	init_problem(nx, nz, dx, dt, pad_size, abs_fact, vel, den, absorb);
@@ -145,7 +111,7 @@ int main()
 
     float* fields[3];
 	for (int i = 0; i < 3; ++ i) {
-		fields[i] = calloc((nx*nz/4+1)*4, sizeof(float));
+		fields[i] = calloc(cell_numbers, sizeof(float));
 	}
 
 	int prev_idx = 0;
@@ -164,15 +130,15 @@ int main()
 		prev_idx = 	curr_idx;
 		curr_idx = next_idx;
 		next_idx = tmp_idx;
-        fields[curr_idx][sz*nx+sx] = fabs(src[step]) > 0.0000001 ? src[step] : fields[curr_idx][sz*nx+sz];
+        fields[curr_idx][sz*nx+sx] = fabs(src[step]) > 0.0000001 ? src[step] : fields[curr_idx][sz*nx+sx];
         //last = this;
-	    run = WavePropagation_nonblock((dt*dt)/(dx*dx), nx, nz, absorb+5*nx, 
-	        fields[curr_idx]+2*nx, den+2*nx, fields[prev_idx]+5*nx, vel+5*nx, fields[next_idx]+5*nx);
+	    run = WavePropagation_nonblock((dt*dt)/(dx*dx), nx, nz, absorb+3*nx, 
+	        fields[curr_idx], den, fields[prev_idx]+3*nx, vel+3*nx, fields[next_idx]+3*nx);
 
-        update_boundary(nx, (dt*dt)/(dx*dx), vel, absorb, den, fields[prev_idx], fields[curr_idx], fields[next_idx]);
+        //update_boundary(nx, (dt*dt)/(dx*dx), vel, absorb, den, fields[prev_idx], fields[curr_idx], fields[next_idx]);
         max_wait(run);
 
-        printf("iteration: %d with value: %f\n", step-1, fields[next_idx][73*nx+184]);
+        printf("iteration: %d with value: %f\n", step, fields[next_idx][73*nx+184]);
         memcpy(result+step*(nx-2*pad_size), fields[next_idx]+nx*receiver_depth+pad_size, (nx-2*pad_size)*sizeof(float));
 	}
 	printf("Finish DFE\n");
