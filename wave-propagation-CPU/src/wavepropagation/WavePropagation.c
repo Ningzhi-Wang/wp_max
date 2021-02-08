@@ -82,7 +82,7 @@ int main()
     int abs_layer_coefficient = 5;
     int pad_size = ceil(dx * abs_layer_coefficient);
     int nx = 501 + 2*pad_size;
-    int nz = 351 + pad_size + 3;
+    int nz = 351 + pad_size + 1;
     int receiver_depth = 73;
     int sx = 150 + pad_size;
     int sz = 83;
@@ -95,18 +95,19 @@ int main()
     float dt = courant_number * dx / 3500.0;
     int time_steps = floor(total_time / dt);
 
-    int cell_numbers = nx*(nz-6) - 1 + (6*nx/4+1)*4;
+    max_file_t *kernel = WavePropagation_init();
+    int burst_size = max_get_burst_size(kernel, NULL) / sizeof(float);
+    printf("burst size :%d\n", burst_size);
+    int cell_numbers = (nx*nz / burst_size + 1)*burst_size;
 
-	int buffer_size = (nx * nz * sizeof(float) / 4 + 1) * 4;
-
-    float* vel = calloc(cell_numbers, sizeof(float)); 
+    float* vel = calloc(cell_numbers, sizeof(float));
     float* den = calloc(cell_numbers, sizeof(float));
     float* absorb = calloc(cell_numbers, sizeof(float));
 	printf("init problem\n");
 
 	init_problem(nx, nz, dx, dt, pad_size, abs_fact, vel, den, absorb);
 
-	float* src = malloc(time_steps * sizeof(float));
+	float* src = calloc((time_steps / burst_size + 1) * burst_size, sizeof(float));
 	get_ricker(time_steps, dt, frequency, source_amplitude, src);
 
     float* fields[3];
@@ -114,33 +115,37 @@ int main()
 		fields[i] = calloc(cell_numbers, sizeof(float));
 	}
 
-	int prev_idx = 0;
-	int curr_idx = 1;
-	int next_idx = 2;
+	float* result = malloc(time_steps * nx * sizeof(float));
+	printf("Writing data to DFE\n");
+	int buffer_size = cell_numbers * sizeof(float);
+	WavePropagation_writeLMem(buffer_size, 0, vel);
+	printf("Writing a\n");
+	WavePropagation_writeLMem(buffer_size, buffer_size, absorb);
+	printf("Writing d\n");
+	WavePropagation_writeLMem(buffer_size, 2*buffer_size, den);
+	printf("Writing 1\n");
+	WavePropagation_writeLMem(buffer_size, 3*buffer_size, fields[0]);
+	printf("Writing 2\n");
+	WavePropagation_writeLMem(buffer_size, 4*buffer_size, fields[1]);
+	printf("Writing 3\n");
+	WavePropagation_writeLMem(buffer_size, 5*buffer_size, fields[2]);
+	printf("Writing src\n");
+	WavePropagation_writeLMem((time_steps / burst_size + 1)*burst_size*sizeof(float), 6*buffer_size, src);
 
-	float* result = malloc(time_steps * (nx - 2 * pad_size) * sizeof(float));
-	printf("Running DFE\n");
+//	max_wait(vel_write);
+//	max_wait(abs_write);
+//	max_wait(den_write);
+//	max_wait(one_write);
+//	max_wait(two_write);
+//	max_wait(three_write);
+//	max_wait(sig_write);
 
-    fields[curr_idx][sz*nx+sx] = src[0];
-    //max_run_t* last = NULL;
-	max_run_t* run = NULL;
-    for (int step = 0; step < time_steps; ++ step) 
-	{
-		int tmp_idx = prev_idx;
-		prev_idx = 	curr_idx;
-		curr_idx = next_idx;
-		next_idx = tmp_idx;
-        fields[curr_idx][sz*nx+sx] = fabs(src[step]) > 0.0000001 ? src[step] : fields[curr_idx][sz*nx+sx];
-        //last = this;
-	    run = WavePropagation_nonblock((dt*dt)/(dx*dx), nx, nz, absorb+3*nx, 
-	        fields[curr_idx], den, fields[prev_idx]+3*nx, vel+3*nx, fields[next_idx]+3*nx);
+	printf("Running Propagation\n");
+	WavePropagation(dt*dt/(dx*dx), nx, nz, receiver_depth, sx, sz, time_steps);
 
-        //update_boundary(nx, (dt*dt)/(dx*dx), vel, absorb, den, fields[prev_idx], fields[curr_idx], fields[next_idx]);
-        max_wait(run);
+	printf("Reading result\n");
+	WavePropagation_readLMem(nx*time_steps*sizeof(float), 6*buffer_size + time_steps*sizeof(float), result);
 
-        printf("iteration: %d with value: %f\n", step, fields[next_idx][73*nx+184]);
-        memcpy(result+step*(nx-2*pad_size), fields[next_idx]+nx*receiver_depth+pad_size, (nx-2*pad_size)*sizeof(float));
-	}
 	printf("Finish DFE\n");
 	FILE * f;
 	f = fopen("./fpga.csv", "w");

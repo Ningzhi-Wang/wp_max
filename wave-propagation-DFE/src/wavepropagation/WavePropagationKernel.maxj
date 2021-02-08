@@ -10,7 +10,6 @@ package wavepropagation;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
@@ -21,67 +20,55 @@ class WavePropagationKernel extends Kernel {
 	WavePropagationKernel(KernelParameters parameters, int nxMax) {
 		super(parameters);
 		DFEVar dtdx2 = io.scalarInput("dtdx2", dfeFloat(8, 24));
-		OffsetExpr nx = stream.makeOffsetParam("nx", 3, nxMax);
+		DFEVar src_loc = io.scalarInput("src_loc", dfeUInt(32));
+		DFEVar rcvr_z = io.scalarInput("rcvr_z", dfeUInt(16));
+		OffsetExpr nx = stream.makeOffsetParam("nx", 1, nxMax);
 		DFEVar nz = io.scalarInput("nz", dfeUInt(16));
 		DFEVar nx_value = nx.getDFEVar(this).cast(dfeUInt(16));
 
 
-		Count.Params position_params = control.count.makeParams(16)
-			.withMax(nx_value).withInc(1);
+		Count.Params cell_params = control.count.makeParams(32).withMax(nx_value*nz).withInc(1);
+		Counter cell = control.count.makeCounter(cell_params);
+		
+		Count.Params position_params = control.count.makeParams(16).withMax(nx_value).withInc(1);
 		Counter position = control.count.makeCounter(position_params);
 
-		Count.Params line_params = control.count.makeParams(16)
-		    .withEnable(position.getWrap()).withInc(1);
+		Count.Params line_params = control.count.makeParams(16).withEnable(position.getWrap()).withInc(1);
 		Counter line = control.count.makeCounter(line_params);
 
-		DFEVar line_number = line.getCount();
-
-
+		Count.Params field_params = control.count.makeParams(2).withEnable(cell.getWrap()).withInc(1);
+		Counter field_idx = control.count.makeCounter(field_params);
+		
 		DFEVar v = io.input("velocity", dfeFloat(8, 24));
 		DFEVar q = io.input("absorb", dfeFloat(8, 24));
-		DFEVar p = io.input("prev", dfeFloat(8, 24));
 		DFEVar d = io.input("density", dfeFloat(8, 24));
-		DFEVar c = io.input("curr", dfeFloat(8, 24));
-		DFEVar current_c = stream.offset(c, 3*nx);
-		DFEVar current_d = stream.offset(d, 3*nx);
+		DFEVar signature = io.input("signature", dfeFloat(8, 24), cell.getCount().eq(src_loc));
+		
+		DFEVar one = io.input("fieldOne", dfeFloat(8, 24));
+		DFEVar two = io.input("fieldTwo", dfeFloat(8, 24));
+		DFEVar three = io.input("fieldThree", dfeFloat(8, 24));
+		
+		
+		DFEVar p = control.mux(field_idx.getCount(), one, two, three);
+		
+		DFEVar c = control.mux(field_idx.getCount(), two, three, one);		
+		
 
-		DFEVar selector = KernelMath.min(line_number, constant.var(dfeUInt(16), 2)).cast(dfeUInt(2));
+		DFEVar d2z = stream.offset(c, -nx) * stream.offset(d, -nx) + 
+				stream.offset(c, nx) * stream.offset(d, nx) - 2.0f * c * d;
 
-		DFEVar c_offset_1 = control.mux(selector, 
-		    stream.offset(c, 4*nx), stream.offset(c, 2*nx), c);
-		DFEVar d_offset_1 = control.mux(selector, 
-		    stream.offset(d, 4*nx), stream.offset(d, 2*nx), d);
+		DFEVar d2x = stream.offset(c, -1) * stream.offset(d, -1) + 
+				stream.offset(c, 1) * stream.offset(d, 1) - 2.0f * c * d;
 
-		DFEVar c_offset_2 = control.mux(line_number > 0, stream.offset(c, 3*nx), stream.offset(c, nx));
-		DFEVar d_offset_2 = control.mux(line_number > 0, stream.offset(d, 3*nx), stream.offset(d, nx));
+		DFEVar result = ((d2x+d2z)*dtdx2*v*v/d + (2.0-q*q)*c - (1.0-q)*p) / (1.0+q);
 
+		DFEVar r = position.getCount() > 0 & position.getCount() < nx_value-1 & line.getCount() < nz - 2 ? result : 0;
+		r = cell.getCount().eq(src_loc) & signature.neq(0) ? signature : r;
+		
 
-		DFEVar d2z = 
-		    1.0 / 90.0 * (c_offset_1 * d_offset_1 + 
-			    stream.offset(c, 6*nx) * stream.offset(d, 6*nx)) -
-			3.0 / 20.0 * (c_offset_2 * d_offset_2 + 
-				stream.offset(c, 5*nx) * stream.offset(d, 5*nx)) +
-			3.0 / 2.0 * (stream.offset(c, 2*nx) * stream.offset(d, 2*nx) + 
-				stream.offset(c, 4*nx) * stream.offset(d, 4*nx)) -
-			49.0 / 18.0 * (current_c * current_d);
-
-		 DFEVar d2x = 
-		    1.0 / 90.0 * (stream.offset(c, 3*nx-3) * stream.offset(d, 3*nx-3) + 
-			    stream.offset(c, 3*nx+3) * stream.offset(d, 3*nx+3)) -
-			3.0 / 20.0 * (stream.offset(c, 3*nx-2) * stream.offset(d, 3*nx-2) + 
-				stream.offset(c, 3*nx+2) * stream.offset(d, 3*nx+2)) +
-			3.0 / 2.0 * (stream.offset(c, 3*nx-1) * stream.offset(d, 3*nx-1) + 
-				stream.offset(c, 3*nx+1) * stream.offset(d, 3*nx+1)) -
-			49.0 / 18.0 * (current_c * current_d);
-
-		DFEVar result = ((d2x+d2z)*dtdx2*v*v/current_d + 
-			(2.0-q*q)*current_c - (1.0-q)*p) / (1.0+q);
-
-		DFEVar r = position.getCount()>2 & 
-		    position.getCount()<nx_value-3 & line.getCount() < nz - 6 
-		    ? result : 0;
-
-
-		io.output("nxt", r, dfeFloat(8, 24));
+		io.output("outThree", r, dfeFloat(8, 24), field_idx.getCount().eq(0));
+		io.output("outTwo", r, dfeFloat(8, 24), field_idx.getCount().eq(1));
+		io.output("outOne", r, dfeFloat(8, 24), field_idx.getCount().eq(2));
+		io.output("output", r, dfeFloat(8, 24), line.getCount().eq(rcvr_z));
     }
 }

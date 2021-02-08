@@ -10,6 +10,7 @@
 package wavepropagation;
 
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
 import com.maxeler.platform.max5.manager.MAX5CManager;
 
 public class WavePropagationManagerMAX5C extends MAX5CManager implements WavePropagationManager {
@@ -18,7 +19,11 @@ public class WavePropagationManagerMAX5C extends MAX5CManager implements WavePro
 		super(params);
 		setup();
 	}
-
+	
+	public LMemInterface createLMemInterface() {
+		return addLMemInterface();
+	}
+	
 	public static void main(String[] args) {
 		MAX5CManager manager = new WavePropagationManagerMAX5C(new EngineParameters(args));
 		manager.build();

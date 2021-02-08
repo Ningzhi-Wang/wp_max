@@ -10,9 +10,13 @@
 package wavepropagation;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemCommandGroup;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.LMemInterface;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface.Direction;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
@@ -20,43 +24,103 @@ import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerSlic;
 
 public interface WavePropagationManager extends ManagerPCIe, ManagerKernel, ManagerSlic {
 	static final int nxMax = 1 << 16;
-
+	static final CPUTypes TYPE = CPUTypes.FLOAT;
+	
 	default void setup() {
 		Kernel kernel = new WavePropagationKernel(
 			makeKernelParameters("WavePropagationKernel"), nxMax);
 		KernelBlock kernelBlock = addKernel(kernel);
 
-		kernelBlock.getInput("velocity") <== addStreamFromCPU("velocity");
-		kernelBlock.getInput("absorb") <== addStreamFromCPU("absorb");
-		kernelBlock.getInput("prev") <== addStreamFromCPU("prev");
-		kernelBlock.getInput("density") <== addStreamFromCPU("density");
-		kernelBlock.getInput("curr") <== addStreamFromCPU("curr");
-		addStreamToCPU("nxt") <== kernelBlock.getOutput("nxt");
+		LMemInterface iface = createLMemInterface();
+		DFELink cpu2lmem = iface.addStreamToLMem("cpu2lmem", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		DFELink lmem2cpu = iface.addStreamFromLMem("lmem2cpu", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+
+		DFELink fromcpu = addStreamFromCPU("fromcpu");
+		DFELink tocpu = addStreamToCPU("tocpu");
+
+		cpu2lmem <== fromcpu;
+		tocpu <== lmem2cpu;
+		
+		kernelBlock.getInput("velocity") <== iface.addStreamFromLMem("velocity", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		kernelBlock.getInput("absorb") <== iface.addStreamFromLMem("absorb", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		kernelBlock.getInput("density") <== iface.addStreamFromLMem("density", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		kernelBlock.getInput("fieldOne") <== iface.addStreamFromLMem("fieldOne", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		kernelBlock.getInput("fieldTwo") <== iface.addStreamFromLMem("fieldTwo", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		kernelBlock.getInput("fieldThree") <== iface.addStreamFromLMem("fieldThree", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		iface.addStreamToLMem("outOne", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D) <== kernelBlock.getOutput("outOne");
+		iface.addStreamToLMem("outTwo", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D) <== kernelBlock.getOutput("outTwo");
+		iface.addStreamToLMem("outThree", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D) <== kernelBlock.getOutput("outThree");
+		kernelBlock.getInput("signature") <== iface.addStreamFromLMem("signature", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D);
+		iface.addStreamToLMem("output", LMemCommandGroup.MemoryAccessPattern.LINEAR_1D) <== kernelBlock.getOutput("output");
+		createSlicInterface(interfaceWrite("writeLMem"));
+		createSlicInterface(interfaceRead("readLMem"));
 		createSlicInterface(interfaceDefault());
 	}
+	public LMemInterface createLMemInterface();
 
+	static EngineInterface interfaceWrite(String name) {
+		EngineInterface ei = new EngineInterface(name);
+
+		InterfaceParam size  = ei.addParam("size", CPUTypes.INT32);
+		InterfaceParam start = ei.addParam("start", CPUTypes.INT32);
+		InterfaceParam sizeInBytes = size * TYPE.sizeInBytes();
+
+		ei.setStream("fromcpu", TYPE, sizeInBytes );
+		ei.setLMemLinear("cpu2lmem", start * TYPE.sizeInBytes(), sizeInBytes);
+		ei.ignoreAll(Direction.IN_OUT);
+		return ei;
+	}
+
+	
+	static EngineInterface interfaceRead(String name) {
+		EngineInterface ei = new EngineInterface(name);
+
+		InterfaceParam size  = ei.addParam("size", CPUTypes.INT32);
+		InterfaceParam start = ei.addParam("start", CPUTypes.INT32);
+		InterfaceParam sizeInBytes = size * TYPE.sizeInBytes();
+
+		ei.setLMemLinear("lmem2cpu", start * TYPE.sizeInBytes(), sizeInBytes);
+		ei.setStream("tocpu", TYPE, sizeInBytes);
+		ei.ignoreAll(Direction.IN_OUT);
+		return ei;
+	}
+	
+	
 	static EngineInterface interfaceDefault() {
 		EngineInterface ei = new EngineInterface();
-		InterfaceParam dtdx2 = ei.addParam("dtdx2", CPUTypes.FLOAT);
+		InterfaceParam zero = ei.addConstant(0l);
+		InterfaceParam dtdx2 = ei.addParam("dtdx2", TYPE);
+		InterfaceParam steps = ei.addParam("steps", CPUTypes.INT32);
+		InterfaceParam src_x = ei.addParam("src_x", CPUTypes.INT32);
+		InterfaceParam src_z = ei.addParam("src_z", CPUTypes.INT32);
+		InterfaceParam rcvr_z = ei.addParam("rcvr_z", CPUTypes.INT32);
 		InterfaceParam nx = ei.addParam("nx", CPUTypes.INT32);
 		InterfaceParam nz = ei.addParam("nz", CPUTypes.INT32);
-		InterfaceParam ticks = nx * (nz - 6) - 1;
+		InterfaceParam cell_number = (nx * nz / 38 + 1) * 38;
+		InterfaceParam buffer_size = cell_number * TYPE.sizeInBytes();
+		InterfaceParam ticks = cell_number * steps;
 
 		ei.setTicks("WavePropagationKernel", ticks);
 
 		ei.setScalar("WavePropagationKernel", "dtdx2", dtdx2);
+		ei.setScalar("WavePropagationKernel", "src_loc", src_x*src_z);
+		ei.setScalar("WavePropagationKernel", "rcvr_z", rcvr_z);
 		ei.setOffset("WavePropagationKernel", "nx", nx);
 		ei.setScalar("WavePropagationKernel", "nz", nz);
-		InterfaceParam buffer_size = ticks * CPUTypes.FLOAT.sizeInBytes();
-
-		ei.setStream("velocity", CPUTypes.FLOAT, buffer_size);
-		ei.setStream("absorb", CPUTypes.FLOAT, buffer_size);
-		ei.setStream("prev", CPUTypes.FLOAT, buffer_size);
-		ei.setStream("nxt", CPUTypes.FLOAT, buffer_size);
-
-		InterfaceParam large_size = buffer_size + (6*nx/4+1)*4*CPUTypes.FLOAT.sizeInBytes();
-		ei.setStream("curr", CPUTypes.FLOAT, large_size);
-		ei.setStream("density", CPUTypes.FLOAT, large_size);
+		
+		ei.setLMemLinearWrapped("velocity", zero, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("absorb", buffer_size, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("density", 2 * buffer_size, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("fieldOne", 3 * buffer_size, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("fieldTwo", 4 * buffer_size, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("fieldThree", 5 * buffer_size, buffer_size, ticks, zero);		
+		ei.setLMemLinearWrapped("outOne", 3 * buffer_size, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("outTwo", 4 * buffer_size, buffer_size, ticks, zero);
+		ei.setLMemLinearWrapped("outThree", 5 * buffer_size, buffer_size, ticks, zero);
+		InterfaceParam burst_step = (steps / 38 + 1) * 38;
+		ei.setLMemLinear("signature", 6 * buffer_size, burst_step * TYPE.sizeInBytes());
+		ei.setLMemLinear("output", 6 * buffer_size + burst_step * TYPE.sizeInBytes(), burst_step * nx * TYPE.sizeInBytes());
+		ei.ignoreAll(Direction.IN_OUT);
 		return ei;
 	}
 
