@@ -24,21 +24,28 @@ class WavePropagationKernel extends Kernel {
 		DFEVar rcvr_z = io.scalarInput("rcvr_z", dfeUInt(16));
 		OffsetExpr nx = stream.makeOffsetParam("nx", 1, nxMax);
 		DFEVar nz = io.scalarInput("nz", dfeUInt(16));
+		DFEVar cell_number = io.scalarInput("cell_number", dfeUInt(32));
 		DFEVar nx_value = nx.getDFEVar(this).cast(dfeUInt(16));
 
-
-		Count.Params cell_params = control.count.makeParams(32).withMax(nx_value*nz).withInc(1);
+		Count.Params cell_params = control.count.makeParams(32).withMax(cell_number).withInc(1);
 		Counter cell = control.count.makeCounter(cell_params);
 		
 		Count.Params position_params = control.count.makeParams(16).withMax(nx_value).withInc(1);
 		Counter position = control.count.makeCounter(position_params);
+		DFEVar col_number = position.getCount();
 
 		Count.Params line_params = control.count.makeParams(16).withEnable(position.getWrap()).withInc(1);
 		Counter line = control.count.makeCounter(line_params);
+		DFEVar row_number = line.getCount();
 
 		Count.Params field_params = control.count.makeParams(2).withEnable(cell.getWrap()).withInc(1);
 		Counter field_idx = control.count.makeCounter(field_params);
+		DFEVar fidx = field_idx.getCount();
 		
+		Count.Params step_params = control.count.makeParams(16).withEnable(cell.getWrap()).withInc(1);
+		Counter step = control.count.makeCounter(step_params);
+		
+		debug.simPrintf(cell.getWrap(), "Iteration: %d\n", step.getCount());
 		DFEVar v = io.input("velocity", dfeFloat(8, 24));
 		DFEVar q = io.input("absorb", dfeFloat(8, 24));
 		DFEVar d = io.input("density", dfeFloat(8, 24));
@@ -49,11 +56,9 @@ class WavePropagationKernel extends Kernel {
 		DFEVar three = io.input("fieldThree", dfeFloat(8, 24));
 		
 		
-		DFEVar p = control.mux(field_idx.getCount(), one, two, three);
+		DFEVar p = control.mux(fidx, one, two, three);
+		DFEVar c = control.mux(fidx, two, three, one);
 		
-		DFEVar c = control.mux(field_idx.getCount(), two, three, one);		
-		
-
 		DFEVar d2z = stream.offset(c, -nx) * stream.offset(d, -nx) + 
 				stream.offset(c, nx) * stream.offset(d, nx) - 2.0f * c * d;
 
@@ -62,13 +67,14 @@ class WavePropagationKernel extends Kernel {
 
 		DFEVar result = ((d2x+d2z)*dtdx2*v*v/d + (2.0-q*q)*c - (1.0-q)*p) / (1.0+q);
 
-		DFEVar r = position.getCount() > 0 & position.getCount() < nx_value-1 & line.getCount() < nz - 2 ? result : 0;
+		DFEVar r = col_number > 0 & col_number < nx_value-1 & row_number < nz - 2 & row_number > 0 ? result : 0;
 		r = cell.getCount().eq(src_loc) & signature.neq(0) ? signature : r;
 		
 
-		io.output("outThree", r, dfeFloat(8, 24), field_idx.getCount().eq(0));
-		io.output("outTwo", r, dfeFloat(8, 24), field_idx.getCount().eq(1));
-		io.output("outOne", r, dfeFloat(8, 24), field_idx.getCount().eq(2));
-		io.output("output", r, dfeFloat(8, 24), line.getCount().eq(rcvr_z));
+		io.output("outThree", r, dfeFloat(8, 24), fidx.eq(0));
+		io.output("outTwo", r, dfeFloat(8, 24), fidx.eq(1));
+		io.output("outOne", r, dfeFloat(8, 24), fidx.eq(2));
+
+		io.output("output", r, dfeFloat(8, 24), row_number.eq(rcvr_z));
     }
 }

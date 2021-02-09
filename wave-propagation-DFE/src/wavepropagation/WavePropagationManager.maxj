@@ -96,7 +96,7 @@ public interface WavePropagationManager extends ManagerPCIe, ManagerKernel, Mana
 		InterfaceParam rcvr_z = ei.addParam("rcvr_z", CPUTypes.INT32);
 		InterfaceParam nx = ei.addParam("nx", CPUTypes.INT32);
 		InterfaceParam nz = ei.addParam("nz", CPUTypes.INT32);
-		InterfaceParam cell_number = (nx * nz / 38 + 1) * 38;
+		InterfaceParam cell_number = ei.addParam("cell_number", CPUTypes.INT32);
 		InterfaceParam buffer_size = cell_number * TYPE.sizeInBytes();
 		InterfaceParam ticks = cell_number * steps;
 
@@ -107,6 +107,7 @@ public interface WavePropagationManager extends ManagerPCIe, ManagerKernel, Mana
 		ei.setScalar("WavePropagationKernel", "rcvr_z", rcvr_z);
 		ei.setOffset("WavePropagationKernel", "nx", nx);
 		ei.setScalar("WavePropagationKernel", "nz", nz);
+		ei.setScalar("WavePropagationKernel", "cell_number", cell_number);
 		
 		ei.setLMemLinearWrapped("velocity", zero, buffer_size, ticks, zero);
 		ei.setLMemLinearWrapped("absorb", buffer_size, buffer_size, ticks, zero);
@@ -117,9 +118,8 @@ public interface WavePropagationManager extends ManagerPCIe, ManagerKernel, Mana
 		ei.setLMemLinearWrapped("outOne", 3 * buffer_size, buffer_size, ticks, zero);
 		ei.setLMemLinearWrapped("outTwo", 4 * buffer_size, buffer_size, ticks, zero);
 		ei.setLMemLinearWrapped("outThree", 5 * buffer_size, buffer_size, ticks, zero);
-		InterfaceParam burst_step = (steps / 38 + 1) * 38;
-		ei.setLMemLinear("signature", 6 * buffer_size, burst_step * TYPE.sizeInBytes());
-		ei.setLMemLinear("output", 6 * buffer_size + burst_step * TYPE.sizeInBytes(), burst_step * nx * TYPE.sizeInBytes());
+		ei.setLMemLinear("signature", 6 * buffer_size, steps * TYPE.sizeInBytes());
+		ei.setLMemLinear("output", 6 * buffer_size + steps * TYPE.sizeInBytes(), steps * nx * TYPE.sizeInBytes());
 		ei.ignoreAll(Direction.IN_OUT);
 		return ei;
 	}

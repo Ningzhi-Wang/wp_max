@@ -293,6 +293,7 @@ max_actions_t* WavePropagation_readLMem_convert(max_file_t *maxfile, WavePropaga
 /**
  * \brief Basic static function for the interface 'default'.
  * 
+ * \param [in] param_cell_number Interface Parameter "cell_number".
  * \param [in] param_dtdx2 Interface Parameter "dtdx2".
  * \param [in] param_nx Interface Parameter "nx".
  * \param [in] param_nz Interface Parameter "nz".
@@ -302,6 +303,7 @@ max_actions_t* WavePropagation_readLMem_convert(max_file_t *maxfile, WavePropaga
  * \param [in] param_steps Interface Parameter "steps".
  */
 void WavePropagation(
+	int32_t param_cell_number,
 	float param_dtdx2,
 	int32_t param_nx,
 	int32_t param_nz,
@@ -318,6 +320,7 @@ void WavePropagation(
  * note that one of these *must* be called, so that associated memory can be released.
  * 
  * 
+ * \param [in] param_cell_number Interface Parameter "cell_number".
  * \param [in] param_dtdx2 Interface Parameter "dtdx2".
  * \param [in] param_nx Interface Parameter "nx".
  * \param [in] param_nz Interface Parameter "nz".
@@ -328,6 +331,7 @@ void WavePropagation(
  * \return A handle on the execution status, or NULL in case of error.
  */
 max_run_t *WavePropagation_nonblock(
+	int32_t param_cell_number,
 	float param_dtdx2,
 	int32_t param_nx,
 	int32_t param_nz,
@@ -341,6 +345,7 @@ max_run_t *WavePropagation_nonblock(
  * 
  */
 typedef struct { 
+	int32_t param_cell_number; /**<  [in] Interface Parameter "cell_number". */
 	float param_dtdx2; /**<  [in] Interface Parameter "dtdx2". */
 	int32_t param_nx; /**<  [in] Interface Parameter "nx". */
 	int32_t param_nz; /**<  [in] Interface Parameter "nz". */

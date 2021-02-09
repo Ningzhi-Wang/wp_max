@@ -97,8 +97,8 @@ int main()
 
     max_file_t *kernel = WavePropagation_init();
     int burst_size = max_get_burst_size(kernel, NULL) / sizeof(float);
-    printf("burst size :%d\n", burst_size);
     int cell_numbers = (nx*nz / burst_size + 1)*burst_size;
+    time_steps = (time_steps / burst_size + 1) * burst_size;
 
     float* vel = calloc(cell_numbers, sizeof(float));
     float* den = calloc(cell_numbers, sizeof(float));
@@ -107,7 +107,7 @@ int main()
 
 	init_problem(nx, nz, dx, dt, pad_size, abs_fact, vel, den, absorb);
 
-	float* src = calloc((time_steps / burst_size + 1) * burst_size, sizeof(float));
+	float* src = calloc(time_steps, sizeof(float));
 	get_ricker(time_steps, dt, frequency, source_amplitude, src);
 
     float* fields[3];
@@ -118,30 +118,24 @@ int main()
 	float* result = malloc(time_steps * nx * sizeof(float));
 	printf("Writing data to DFE\n");
 	int buffer_size = cell_numbers * sizeof(float);
-	WavePropagation_writeLMem(buffer_size, 0, vel);
-	printf("Writing a\n");
-	WavePropagation_writeLMem(buffer_size, buffer_size, absorb);
-	printf("Writing d\n");
-	WavePropagation_writeLMem(buffer_size, 2*buffer_size, den);
-	printf("Writing 1\n");
-	WavePropagation_writeLMem(buffer_size, 3*buffer_size, fields[0]);
-	printf("Writing 2\n");
-	WavePropagation_writeLMem(buffer_size, 4*buffer_size, fields[1]);
-	printf("Writing 3\n");
-	WavePropagation_writeLMem(buffer_size, 5*buffer_size, fields[2]);
-	printf("Writing src\n");
-	WavePropagation_writeLMem((time_steps / burst_size + 1)*burst_size*sizeof(float), 6*buffer_size, src);
+	max_run_t *vel_write = WavePropagation_writeLMem_nonblock(cell_numbers, 0, vel);
+	max_run_t *abs_write = WavePropagation_writeLMem_nonblock(cell_numbers, cell_numbers, absorb);
+	max_run_t *den_write = WavePropagation_writeLMem_nonblock(cell_numbers, 2*cell_numbers, den);
+	max_run_t *one_write = WavePropagation_writeLMem_nonblock(cell_numbers, 3*cell_numbers, fields[0]);
+	max_run_t *two_write = WavePropagation_writeLMem_nonblock(cell_numbers, 4*cell_numbers, fields[1]);
+	max_run_t *three_write = WavePropagation_writeLMem_nonblock(cell_numbers, 5*cell_numbers, fields[2]);
+	max_run_t *sig_write = WavePropagation_writeLMem_nonblock(time_steps, 6*cell_numbers, src);
 
-//	max_wait(vel_write);
-//	max_wait(abs_write);
-//	max_wait(den_write);
-//	max_wait(one_write);
-//	max_wait(two_write);
-//	max_wait(three_write);
-//	max_wait(sig_write);
+	max_wait(vel_write);
+	max_wait(abs_write);
+	max_wait(den_write);
+	max_wait(one_write);
+	max_wait(two_write);
+	max_wait(three_write);
+	max_wait(sig_write);
 
 	printf("Running Propagation\n");
-	WavePropagation(dt*dt/(dx*dx), nx, nz, receiver_depth, sx, sz, time_steps);
+	WavePropagation(cell_numbers, dt*dt/(dx*dx), nx, nz, receiver_depth, sx, sz, time_steps);
 
 	printf("Reading result\n");
 	WavePropagation_readLMem(nx*time_steps*sizeof(float), 6*buffer_size + time_steps*sizeof(float), result);
